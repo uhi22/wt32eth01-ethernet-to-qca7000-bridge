@@ -14,3 +14,7 @@ a Qualcomm QCA7000/7005.
 - [ ] find pins for SPI
 - [ ] implement routing from Ethernet to SPI
 - [ ] implement routing from SPI to Ethernet
+
+## References
+
+- Ref1 Discussion about SPI pins on WT32-ETH01: https://community.home-assistant.io/t/wt32-eth01-and-pt100-max31865-spi-pins/807472/3
