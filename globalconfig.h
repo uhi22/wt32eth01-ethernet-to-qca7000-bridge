@@ -2,7 +2,7 @@
 //extern int uart_write_bytes(int uart_num, const void* src, size_t size);
 
 /* Logging verbosity settings */
-//#define VERBOSE_INIT_ETH
+#define VERBOSE_INIT_ETH
 
 /* Ethernet */
 #define MY_ETH_TRANSMIT_BUFFER_LEN 250
@@ -17,7 +17,14 @@ extern uint8_t myMAC[6];
 extern uint8_t nMaxInMyEthernetReceiveCallback, nInMyEthernetReceiveCallback;
 extern uint8_t isEthLinkUp;
 
-
+/* from ETH.h */
+//Dedicated GPIOs for RMII
+#define ETH_RMII_TX_EN  21
+#define ETH_RMII_TX0    19
+#define ETH_RMII_TX1    22
+#define ETH_RMII_RX0    25
+#define ETH_RMII_RX1_EN 26
+#define ETH_RMII_CRS_DV 27
 
 /* functions */
 #if defined(__cplusplus)
@@ -36,6 +43,8 @@ void addToTrace_chararray(char *s);
 #include "esp_eth.h"
 #include "esp_eth_phy.h"
 #include "esp_eth_mac.h"
+/* does it make sense to include the periman??? */
+#include "esp32-hal-periman.h"
 
 #define ETH_PHY_ADDR 1 /* from pins_arduino.h of wt32-eth01 */
 #define ETH_PHY_TYPE ETH_PHY_LAN8720

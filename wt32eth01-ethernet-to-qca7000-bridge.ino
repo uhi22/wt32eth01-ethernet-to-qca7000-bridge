@@ -1,5 +1,5 @@
 /* This is the main Arduino file of the project. */
-/* Developed in Arduino IDE 2.0.4 */
+/* Developed in Arduino IDE 2.2.1 */
 
 /* Modularization concept:
 - The wt32eth01-ethernet-to-qca7000-bridge.ino is the main Arduino file of the project.
@@ -20,8 +20,8 @@
 /**********************************************************/
 
 #define PIN_LED 2 /* The IO2 is used for an LED. This LED is externally added to the WT32-ETH01 board. */
-#define PIN_STATE_C 4 /* The IO4 is used to change the CP line to state C. High=StateC, Low=StateB */ 
-#define PIN_POWER_RELAIS 14 /* IO14 for the power relay */
+//#define PIN_STATE_C 4 /* The IO4 is used to change the CP line to state C. High=StateC, Low=StateB */ 
+//#define PIN_POWER_RELAIS 14 /* IO14 for the power relay */
 uint32_t currentTime;
 uint32_t lastTime1s;
 uint32_t lastTime30ms;
@@ -38,7 +38,6 @@ uint16_t counterForDisplayUpdate;
 void sanityCheck(String info) {
   int r;
   r= hardwareInterface_sanityCheck();
-  r=r | homeplug_sanityCheck();
   if (eatenHeapSpace>10000) {
     /* if something is eating the heap, this is a fatal error. */
     addToTrace("ERROR: Sanity check failed due to heap space check.");
@@ -118,10 +117,8 @@ void cyclicLcdUpdate(void) {
 /* This task runs each 30ms. */
 void task30ms(void) {
   nCycles30ms++;
-  connMgr_Mainfunction(); /* ConnectionManager */
-  modemFinder_Mainfunction();
-  runSlacSequencer();
-  pevStateMachine_Mainfunction();
+  //modemFinder_Mainfunction();
+  //runSlacSequencer();
   cyclicLcdUpdate();
   sanityCheck("cyclic30ms");
 }
@@ -161,19 +158,15 @@ void setup() {
   hardwareInterface_showOnDisplay("2023-07-18", "Hello", "World");
   // Set pin mode
   pinMode(PIN_LED,OUTPUT);
-  pinMode(PIN_STATE_C, OUTPUT);
-  pinMode(PIN_POWER_RELAIS, OUTPUT);
-  digitalWrite(PIN_POWER_RELAIS, HIGH); /* deactivate relais */
+  //pinMode(PIN_STATE_C, OUTPUT);
+  //pinMode(PIN_POWER_RELAIS, OUTPUT);
+  //digitalWrite(PIN_POWER_RELAIS, HIGH); /* deactivate relais */
   delay(500); /* wait for power inrush, to avoid low-voltage during startup if we would switch the relay here. */
   if (!initEth()) {
     log_v("Error: Ethernet init failed.");
     hardwareInterface_showOnDisplay("Error", "initEth failed", "check pwr");
     while (1);
   }
-  Serial.println("Relay test.");
-  digitalWrite(PIN_POWER_RELAIS, LOW); /* activate relais as test */
-  delay(500);
-  digitalWrite(PIN_POWER_RELAIS, HIGH); /* deactivate relais */
   /* The time for the tasks starts here. */
   currentTime = millis();
   lastTime30ms = currentTime;

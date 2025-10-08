@@ -1,5 +1,15 @@
   
 /* The Ethernet low-level stuff */
+
+/* Version problem: The struct eth_mac_config_t (and most likely a lot more) have been changed by Espressif.
+   Original version of the raw ethernet which has been working with https://github.com/uhi22/ccs32 in 2023 does not compile
+   anymore with the newer Arduino/IDF version in 2025.
+   The espressif side of the new version is located here:
+   C:\Users\uwemi\AppData\Local\Arduino15\packages\esp32\tools\esp32-arduino-libs\idf-release_v5.1-bd2b9390ef\esp32\include\esp_eth\include
+   and
+   C:\Users\uwemi\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.0.2\libraries\Ethernet\src
+*/ 
+
 static eth_clock_mode_t eth_clock_mode = ETH_CLK_MODE;
 esp_eth_handle_t eth_handle;
 uint8_t isEthLinkUp;
@@ -40,7 +50,7 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
   if (nInMyEthernetReceiveCallback>nMaxInMyEthernetReceiveCallback) nMaxInMyEthernetReceiveCallback = nInMyEthernetReceiveCallback;
   nTotalEthReceiveBytes+=length;
   /* We received an ethernet package. Determine its type, and dispatch it to the related handler. */
-  uint16_t etherType = getEtherType(buffer);
+  //uint16_t etherType = getEtherType(buffer);
   //Serial.println("EtherType" + String(etherType, HEX) + " size " + String(length));   
   uint32_t L;
   sanityCheck("Start of eth rx");
@@ -55,15 +65,15 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
   myreceivebufferLen=L;
   sanityCheck("Step2 of eth rx"); 
   showAsHex(myreceivebuffer, myreceivebufferLen, "eth.myreceivebuffer");   
-  if (etherType == 0x88E1) { /* it is a HomePlug message */
-    Serial.println("Its a HomePlug message.");
-    evaluateReceivedHomeplugPacket();
-  } else if (etherType == 0x86dd) { /* it is an IPv6 frame */
-    Serial.println("Its a IPv6 message.");
-    ipv6_evaluateReceivedPacket();
-  } else {
+  //if (etherType == 0x88E1) { /* it is a HomePlug message */
+  //  Serial.println("Its a HomePlug message.");
+    //evaluateReceivedHomeplugPacket();
+  //} else if (etherType == 0x86dd) { /* it is an IPv6 frame */
+  //  Serial.println("Its a IPv6 message.");
+    //ipv6_evaluateReceivedPacket();
+  //} else {
     //Serial.println("Other message.");
-  }
+  //}
   sanityCheck("End of eth rx");
   nInMyEthernetReceiveCallback--;
   free(buffer); /* We need to free the buffer, because the driver will NOT do this (at least in Arduino 2.0.4 with esp-idf4.4.4) */
@@ -99,6 +109,7 @@ bool initEth(void) {
   int power=ETH_PHY_POWER;
   int mdc=ETH_PHY_MDC;
   int mdio=ETH_PHY_MDIO;
+  int pin_mcd, pin_mdio, pin_rmii_clock, pin_power;
 
   #ifdef VERBOSE_INIT_ETH
     log_v("This is initEth.");
@@ -109,40 +120,97 @@ bool initEth(void) {
 	//log_printf(ARDUHAL_LOG_FORMAT(I, "mdio %d"), mdio);
 	//log_printf(ARDUHAL_LOG_FORMAT(I, "type %d"), type);
 	//log_printf(ARDUHAL_LOG_FORMAT(I, "clock_mode %d"), clock_mode);
-  esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
-  esp_netif_t *eth_netif = esp_netif_new(&cfg);
-        
+  //esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+  //esp_netif_t *eth_netif = esp_netif_new(&cfg);
+   #ifdef VERBOSE_INIT_ETH
+    log_v("periman de-init section.");
+  #endif 
+  // is the periman mandatory???
+  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_RMII, ETHClass::ethDetachBus);
+  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_CLK, ETHClass::ethDetachBus);
+  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_MCD, ETHClass::ethDetachBus);
+  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_MDIO, ETHClass::ethDetachBus);
+  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_PWR, ETHClass::ethDetachBus);
+
   esp_eth_mac_t *eth_mac = NULL;
-  eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+
+  eth_esp32_emac_config_t mac_config = ETH_ESP32_EMAC_DEFAULT_CONFIG();
   mac_config.clock_config.rmii.clock_mode = (eth_clock_mode) ? EMAC_CLK_OUT : EMAC_CLK_EXT_IN;
   mac_config.clock_config.rmii.clock_gpio = (1 == eth_clock_mode) ? EMAC_APPL_CLK_OUT_GPIO : (2 == eth_clock_mode) ? EMAC_CLK_OUT_GPIO : (3 == eth_clock_mode) ? EMAC_CLK_OUT_180_GPIO : EMAC_CLK_IN_GPIO;
-  mac_config.smi_mdc_gpio_num = mdc;
-  mac_config.smi_mdio_gpio_num = mdio;
-  mac_config.sw_reset_timeout_ms = 1000;
-  mac_config.rx_task_stack_size = 4096; /* discussed in https://esp32.com/viewtopic.php?t=26603. Default 2048 may cause stack canary failure. */
-    
+  //mac_config.smi_mdc_gpio_num = mdc; /* old */
+  //mac_config.smi_mdio_gpio_num = mdio;
+  mac_config.smi_mdc_gpio_num = digitalPinToGPIONumber(mdc); /* new */
+  mac_config.smi_mdio_gpio_num = digitalPinToGPIONumber(mdio); 
+
+  pin_mcd = digitalPinToGPIONumber(mdc);
+  pin_mdio = digitalPinToGPIONumber(mdio);
+  pin_rmii_clock = mac_config.clock_config.rmii.clock_gpio;
+  pin_power = digitalPinToGPIONumber(power);
+  
+  if (!perimanClearPinBus(pin_rmii_clock)) {
+    return false;
+  }
+  if (!perimanClearPinBus(pin_mcd)) {
+    return false;
+  }
+  if (!perimanClearPinBus(pin_mdio)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_TX_EN)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_TX0)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_TX1)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_RX0)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_RX1_EN)) {
+    return false;
+  }
+  if (!perimanClearPinBus(ETH_RMII_CRS_DV)) {
+    return false;
+  }
+  if (pin_power != -1) {
+    if (!perimanClearPinBus(pin_power)) {
+      return false;
+    }
+  }
+
+  eth_mac_config_t eth_mac_config = ETH_MAC_DEFAULT_CONFIG();
+  eth_mac_config.sw_reset_timeout_ms = 1000;
+
   #ifdef VERBOSE_INIT_ETH
     log_v("calling esp_eth_mac_new_esp32");
   #endif      
-  eth_mac = esp_eth_mac_new_esp32(&mac_config);
-  if(eth_mac == NULL){
+
+  esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config, &eth_mac_config);
+  if (mac == NULL) {
     log_e("esp_eth_mac_new_esp32 failed");
     return false;
   }
   #ifdef VERBOSE_INIT_ETH
     log_v("done");
   #endif  
+
+
+
+  //todo porting mac_config.rx_task_stack_size = 4096; /* discussed in https://esp32.com/viewtopic.php?t=26603. Default 2048 may cause stack canary failure. */
+  
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
   phy_config.phy_addr = phy_addr;
   phy_config.reset_gpio_num = power;
-  esp_eth_phy_t *eth_phy = NULL;
+  esp_eth_phy_t *phy = NULL;
     
   #ifdef VERBOSE_INIT_ETH    
-    log_v("calling esp_eth_phy_new_lan8720");
+    log_v("calling esp_eth_phy_new_lan87xx");
   #endif      
-  eth_phy = esp_eth_phy_new_lan8720(&phy_config);
-  if(eth_phy == NULL){
-    log_e("esp_eth_phy_new failed");
+  phy = esp_eth_phy_new_lan87xx(&phy_config);
+  if(phy == NULL){
+    log_e("esp_eth_phy_new_lan87xx failed");
     return false;
   }
   #ifdef VERBOSE_INIT_ETH    
@@ -150,7 +218,7 @@ bool initEth(void) {
   #endif
   
   eth_handle = NULL;
-  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(eth_mac, eth_phy);
+  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(eth_mac, phy);
   #ifdef VERBOSE_INIT_ETH
     log_v("Calling esp_eth_driver_install.");
   #endif
