@@ -64,7 +64,7 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
                                          single received message, and will be present until the application frees it. */ 
   myreceivebufferLen=L;
   sanityCheck("Step2 of eth rx"); 
-  showAsHex(myreceivebuffer, myreceivebufferLen, "eth.myreceivebuffer");   
+  //showAsHex(myreceivebuffer, myreceivebufferLen, "eth.myreceivebuffer");   
   //if (etherType == 0x88E1) { /* it is a HomePlug message */
   //  Serial.println("Its a HomePlug message.");
     //evaluateReceivedHomeplugPacket();
@@ -114,31 +114,13 @@ bool initEth(void) {
   #ifdef VERBOSE_INIT_ETH
     log_v("This is initEth.");
   #endif  
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "phy_addr %d"), phy_addr);
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "power %d"), power);
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "mdc %d"), mdc);
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "mdio %d"), mdio);
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "type %d"), type);
-	//log_printf(ARDUHAL_LOG_FORMAT(I, "clock_mode %d"), clock_mode);
-  //esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
-  //esp_netif_t *eth_netif = esp_netif_new(&cfg);
    #ifdef VERBOSE_INIT_ETH
     log_v("periman de-init section.");
-  #endif 
-  // is the periman mandatory???
-  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_RMII, ETHClass::ethDetachBus);
-  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_CLK, ETHClass::ethDetachBus);
-  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_MCD, ETHClass::ethDetachBus);
-  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_MDIO, ETHClass::ethDetachBus);
-  //perimanSetBusDeinit(ESP32_BUS_TYPE_ETHERNET_PWR, ETHClass::ethDetachBus);
-
-  esp_eth_mac_t *eth_mac = NULL;
+  #endif
 
   eth_esp32_emac_config_t mac_config = ETH_ESP32_EMAC_DEFAULT_CONFIG();
   mac_config.clock_config.rmii.clock_mode = (eth_clock_mode) ? EMAC_CLK_OUT : EMAC_CLK_EXT_IN;
   mac_config.clock_config.rmii.clock_gpio = (1 == eth_clock_mode) ? EMAC_APPL_CLK_OUT_GPIO : (2 == eth_clock_mode) ? EMAC_CLK_OUT_GPIO : (3 == eth_clock_mode) ? EMAC_CLK_OUT_180_GPIO : EMAC_CLK_IN_GPIO;
-  //mac_config.smi_mdc_gpio_num = mdc; /* old */
-  //mac_config.smi_mdio_gpio_num = mdio;
   mac_config.smi_mdc_gpio_num = digitalPinToGPIONumber(mdc); /* new */
   mac_config.smi_mdio_gpio_num = digitalPinToGPIONumber(mdio); 
 
@@ -202,7 +184,7 @@ bool initEth(void) {
   
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
   phy_config.phy_addr = phy_addr;
-  phy_config.reset_gpio_num = power;
+  phy_config.reset_gpio_num = pin_power;
   esp_eth_phy_t *phy = NULL;
     
   #ifdef VERBOSE_INIT_ETH    
@@ -218,7 +200,7 @@ bool initEth(void) {
   #endif
   
   eth_handle = NULL;
-  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(eth_mac, phy);
+  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
   #ifdef VERBOSE_INIT_ETH
     log_v("Calling esp_eth_driver_install.");
   #endif

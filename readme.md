@@ -8,7 +8,9 @@ a Qualcomm QCA7000/7005.
 
 ## News / Change history / functional status
 
-### 2025-10-06 Empty project without functionality
+### 2025-10-09 Ethernet migrated to later IDF version
+
+compiles and sees incoming traffic from ethernet
 
 ## Todos
 - [ ] find pins for SPI

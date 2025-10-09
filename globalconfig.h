@@ -46,16 +46,22 @@ void addToTrace_chararray(char *s);
 /* does it make sense to include the periman??? */
 #include "esp32-hal-periman.h"
 
-#define ETH_PHY_ADDR 1 /* from pins_arduino.h of wt32-eth01 */
-#define ETH_PHY_TYPE ETH_PHY_LAN8720
+/* from working ethernet example code in oct 2025 */
+#define ETH_PHY_TYPE    ETH_PHY_LAN8720
+#define ETH_PHY_ADDR    1
+#define ETH_PHY_POWER   16
+#define ETH_PHY_MDC     23
+#define ETH_PHY_MDIO    18
+#define ETH_CLK_MODE    ETH_CLOCK_GPIO0_IN
+#define ETH_RMII_TX_EN  21
+#define ETH_RMII_TX0    19
+#define ETH_RMII_TX1    22
+#define ETH_RMII_RX_ER  13
+#define ETH_RMII_RX0    25
+#define ETH_RMII_RX1    26
+#define ETH_RMII_CRS_DV 27
 
-#ifndef ETH_PHY_MDC
-#define ETH_PHY_MDC 23
-#endif
 
-#ifndef ETH_PHY_MDIO
-#define ETH_PHY_MDIO 18
-#endif
 
 #ifndef ETH_CLK_MODE
 #define ETH_CLK_MODE ETH_CLOCK_GPIO0_IN

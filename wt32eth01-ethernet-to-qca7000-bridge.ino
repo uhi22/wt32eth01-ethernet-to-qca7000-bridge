@@ -117,10 +117,8 @@ void cyclicLcdUpdate(void) {
 /* This task runs each 30ms. */
 void task30ms(void) {
   nCycles30ms++;
-  //modemFinder_Mainfunction();
-  //runSlacSequencer();
-  cyclicLcdUpdate();
-  sanityCheck("cyclic30ms");
+  //cyclicLcdUpdate();
+  //sanityCheck("cyclic30ms");
 }
 
 /* This task runs once a second. */
@@ -145,6 +143,8 @@ void task1s(void) {
     /* if we lost more than 1000 bytes on heap, print a waring message: */
     Serial.println("WARNING: EatenHeapSpace=" + String(eatenHeapSpace));
   }
+  Serial.print("rx bytes");
+  Serial.println(nTotalEthReceiveBytes);
 }
 
 /**********************************************************/
@@ -155,7 +155,7 @@ void setup() {
   Serial.println("wt32eth01 SPI bridge started.");
   hardwareInterface_initDisplay();
   delay(800); /* wait until the display is up */  
-  hardwareInterface_showOnDisplay("2023-07-18", "Hello", "World");
+  hardwareInterface_showOnDisplay("2025-10-09", "Hello", "World");
   // Set pin mode
   pinMode(PIN_LED,OUTPUT);
   //pinMode(PIN_STATE_C, OUTPUT);
