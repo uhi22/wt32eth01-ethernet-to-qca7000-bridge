@@ -111,6 +111,55 @@ void cyclicLcdUpdate(void) {
   }
 }
 
+void cleanTransmitBuffer(void) {
+  /* fill the complete ethernet transmit buffer with 0x00 */
+  int i;
+  for (i=0; i<MY_ETH_TRANSMIT_BUFFER_LEN; i++) {
+    mytransmitbuffer[i]=0;
+  }
+}
+
+void sendDemoMessageToEthernet(void) {
+    mytransmitbufferLen = 60;
+    cleanTransmitBuffer();
+    // Destination MAC
+    mytransmitbuffer[0] = 0xff;
+    mytransmitbuffer[1] = 0xff;
+    mytransmitbuffer[2] = 0xff;
+    mytransmitbuffer[3] = 0xff;
+    mytransmitbuffer[4] = 0xff;
+    mytransmitbuffer[5] = 0xff;
+    // Source MAC
+    mytransmitbuffer[6] = 0x11;
+    mytransmitbuffer[7] = 0x22;
+    mytransmitbuffer[8] = 0x33;
+    mytransmitbuffer[9] = 0x44;
+    mytransmitbuffer[10] = 0x55;
+    mytransmitbuffer[11] = 0x66;
+    // Protocol
+    mytransmitbuffer[12]=0xBE; // Protocol
+    mytransmitbuffer[13]=0xEF; //
+    mytransmitbuffer[14]='d';
+    mytransmitbuffer[15]='e'; //
+    mytransmitbuffer[16]='m'; // 
+    mytransmitbuffer[17]='o'; //
+    mytransmitbuffer[18]=' '; // 
+    mytransmitbuffer[19]='D'; // 
+    mytransmitbuffer[20]='E'; //
+    mytransmitbuffer[21]='M'; // 
+    mytransmitbuffer[22]='O'; // 
+    mytransmitbuffer[23]='D'; // 
+    mytransmitbuffer[24]='E'; //
+    mytransmitbuffer[25]='M'; // 
+    mytransmitbuffer[26]='O'; // 
+    mytransmitbuffer[27]=' '; // 
+    mytransmitbuffer[28]='D'; // 
+    mytransmitbuffer[29]='E'; //
+    mytransmitbuffer[30]='M'; // 
+    mytransmitbuffer[31]='O'; // 
+    myEthTransmit();               
+}
+
 /**********************************************************/
 /* The tasks */
 
@@ -145,6 +194,8 @@ void task1s(void) {
   }
   Serial.print("rx bytes");
   Serial.println(nTotalEthReceiveBytes);
+  sendDemoMessageToEthernet();
+  demoQCA7000();
 }
 
 /**********************************************************/
@@ -158,15 +209,17 @@ void setup() {
   hardwareInterface_showOnDisplay("2025-10-09", "Hello", "World");
   // Set pin mode
   pinMode(PIN_LED,OUTPUT);
-  //pinMode(PIN_STATE_C, OUTPUT);
-  //pinMode(PIN_POWER_RELAIS, OUTPUT);
-  //digitalWrite(PIN_POWER_RELAIS, HIGH); /* deactivate relais */
-  delay(500); /* wait for power inrush, to avoid low-voltage during startup if we would switch the relay here. */
+  delay(500); /* wait for power inrush */
+  log_v("Initializing the QCA7000...");
+  qca7000setup();
+  log_v("done.");
+  delay(500); /* wait for power inrush */
   if (!initEth()) {
     log_v("Error: Ethernet init failed.");
     hardwareInterface_showOnDisplay("Error", "initEth failed", "check pwr");
     while (1);
   }
+
   /* The time for the tasks starts here. */
   currentTime = millis();
   lastTime30ms = currentTime;

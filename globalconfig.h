@@ -3,6 +3,7 @@
 
 /* Logging verbosity settings */
 #define VERBOSE_INIT_ETH
+#define VERBOSE_QCA7000
 
 /* Ethernet */
 #define MY_ETH_TRANSMIT_BUFFER_LEN 250
