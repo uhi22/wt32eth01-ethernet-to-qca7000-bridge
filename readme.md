@@ -13,9 +13,9 @@ a Qualcomm QCA7000/7005.
 compiles and sees incoming traffic from ethernet
 
 ## Todos
-- [ ] find pins for SPI
+- [x] find pins for SPI
 - [ ] implement routing from Ethernet to SPI
-- [ ] implement routing from SPI to Ethernet
+- [x] implement routing from SPI to Ethernet
 
 ## References
 

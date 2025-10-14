@@ -49,6 +49,19 @@ void sanityCheck(String info) {
   }
 }
 
+void routeReceivedDataFromQcaToEthernet(void) {
+  /* we got data from the QCA and want to forward it to the ethernet port */
+  /* source: mySpiEthreceivebuffer, mySpiEthreceivebufferLen */
+  /* destination: mytransmitbuffer, mytransmitbufferLen */
+  if (mySpiEthreceivebufferLen>sizeof(mytransmitbuffer)) {
+    Serial.print("ERROR: routeReceivedDataFromQcaToEthernet() size too big " + String(mySpiEthreceivebufferLen));
+    return;
+  }
+  memcpy(mytransmitbuffer, mySpiEthreceivebuffer, mySpiEthreceivebufferLen);
+  mytransmitbufferLen = mySpiEthreceivebufferLen;
+  myEthTransmit();
+}
+
 /**********************************************************/
 /* The logging macros and functions */
 #undef log_v

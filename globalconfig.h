@@ -18,6 +18,12 @@ extern uint8_t myMAC[6];
 extern uint8_t nMaxInMyEthernetReceiveCallback, nInMyEthernetReceiveCallback;
 extern uint8_t isEthLinkUp;
 
+/* QCA buffers */
+extern uint8_t mySpiEthtransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];
+extern uint16_t mySpiEthtransmitbufferLen; /* The number of used bytes in the ethernet transmit buffer */
+extern uint8_t mySpiEthreceivebuffer[MY_ETH_RECEIVE_BUFFER_LEN];
+extern uint16_t mySpiEthreceivebufferLen;
+
 /* from ETH.h */
 //Dedicated GPIOs for RMII
 #define ETH_RMII_TX_EN  21

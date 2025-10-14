@@ -18,7 +18,8 @@ https://community.home-assistant.io/t/wt32-eth01-and-pt100-max31865-spi-pins/807
 #define QCA_SPI_SS 4     /* GPIO4 */
 
 SPIClass * qcaspi = NULL;
-static const int spiClk = 2000000; // 2 MHz
+//static const int spiClk = 2000000; // 2 MHz
+static const int spiClk = 500000; // 500kHz
 
 
 uint8_t mySpiRxBuffer[4000];
@@ -44,10 +45,10 @@ void composeGetSwReq(void) {
     mySpiEthtransmitbuffer[4] = 0xff;
     mySpiEthtransmitbuffer[5] = 0xff;
     /* Source MAC */
-    mySpiEthtransmitbuffer[6] = 0x11;
-    mySpiEthtransmitbuffer[7] = 0x22;
-    mySpiEthtransmitbuffer[8] = 0x33;
-    mySpiEthtransmitbuffer[9] = 0x44;
+    mySpiEthtransmitbuffer[6] = 0xFE;
+    mySpiEthtransmitbuffer[7] = 0xED;
+    mySpiEthtransmitbuffer[8] = 0xBE;
+    mySpiEthtransmitbuffer[9] = 0xEF;
     mySpiEthtransmitbuffer[10] = 0x55;
     mySpiEthtransmitbuffer[11] = 0x66;
     /* Protocol */
@@ -83,7 +84,7 @@ void spiQCA7000DemoReadSignature(void) {
   sig += qcaspi->transfer(0x00);
   digitalWrite(qcaspi->pinSS(), HIGH);
   qcaspi->endTransaction();
-  Serial.println(String(sig, HEX));  /* should be AA 55  */
+  Serial.println("SIGNATURE (should be AA 55) " + String(sig, HEX));  /* should be AA 55  */
 }
 
 void spiQCA7000DemoReadWRBUF_SPC_AVA(void) {
@@ -130,7 +131,9 @@ uint16_t spiQCA7000DemoReadRDBUF_BYTE_AVA(void) {
   n<<=8;  
   n+=qcaspi->transfer(0x00); /* lower byte of the size */
   digitalWrite(qcaspi->pinSS(), HIGH);
-  qcaspi->endTransaction(); 
+  qcaspi->endTransaction();
+
+  Serial.println("RDBUF_BYTE_AVA: " + String(n));  
   return n;
 }
 
@@ -169,6 +172,7 @@ void QCA7000checkRxDataAndDistribute(int16_t availbytes) {
           #ifdef VERBOSE_QCA7000
             showAsHex(mySpiEthreceivebuffer, mySpiEthreceivebufferLen, "eth.mySpiEthreceivebuffer");
           #endif
+          routeReceivedDataFromQcaToEthernet();
           availbytes = availbytes - L1 - 4;
           p+= L1+4;
           //Serial.println("Avail after first run:" + String(availbytes));
@@ -245,6 +249,8 @@ void spiQCA7000SendEthFrame(void) {
     1. Check whether the available transmit buffer size is big enough to get the intended frame.
        If not, this is an error situation, and we need to instruct the QCA to heal, e.g. by resetting it.
   */
+  String s;
+  Serial.println("mySpiEthtransmitbufferLen " + String(mySpiEthtransmitbufferLen));
   spiQCA7000DemoWriteBFR_SIZE(mySpiEthtransmitbufferLen+10); /* The size in the BFR_SIZE is 10 bytes more than in the size after the preamble below (in the original CCM trace) */
   mySpiTxBuffer[0] = 0x00; /* external write command */
   mySpiTxBuffer[1] = 0x00;
@@ -264,13 +270,17 @@ void spiQCA7000SendEthFrame(void) {
   digitalWrite(qcaspi->pinSS(), LOW);
   for (i=0; i<12+mySpiEthtransmitbufferLen; i++) {
     (void) qcaspi->transfer(mySpiTxBuffer[i]);
+    s = s + String(mySpiTxBuffer[i], HEX) + " ";
   }
   digitalWrite(qcaspi->pinSS(), HIGH);
-  qcaspi->endTransaction();   
+  qcaspi->endTransaction();
+  Serial.println(s);
 }
 
 void demoQCA7000SendSoftwareVersionRequest(void) {
+  Serial.println("preparing GetSwReq");
   composeGetSwReq();
+  Serial.println("sending GetSwReq");
   spiQCA7000SendEthFrame(); 
 }
 
@@ -278,6 +288,7 @@ void demoQCA7000(void) {
   spiQCA7000DemoReadSignature();
   spiQCA7000DemoReadWRBUF_SPC_AVA();
   demoQCA7000SendSoftwareVersionRequest();
+  spiQCA7000DemoReadWRBUF_SPC_AVA();
   spiQCA7000checkForReceivedData();
   spiQCA7000checkForReceivedData();
 }
