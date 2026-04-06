@@ -19,7 +19,8 @@
 
 /**********************************************************/
 
-#define PIN_LED 2 /* The IO2 is used for an LED. This LED is externally added to the WT32-ETH01 board. */
+#define PIN_LED_BLUE 2 /* The IO2 is used for an LED. This LED is externally added to the WT32-ETH01 board. */
+#define PIN_LED_RED 17 /* The IO17 (aka TXD) */
 //#define PIN_STATE_C 4 /* The IO4 is used to change the CP line to state C. High=StateC, Low=StateB */ 
 //#define PIN_POWER_RELAIS 14 /* IO14 for the power relay */
 uint32_t currentTime;
@@ -27,8 +28,10 @@ uint32_t lastTime1s;
 uint32_t lastTime30ms;
 uint32_t nCycles30ms;
 uint8_t ledState;
+uint8_t timerSomethingReceivedFromSPI;
 uint32_t initialHeapSpace;
 uint32_t eatenHeapSpace;
+uint8_t nDivider1sTo10s;
 String globalLine1;
 String globalLine2;
 String globalLine3;
@@ -179,18 +182,32 @@ void sendDemoMessageToEthernet(void) {
 /* This task runs each 30ms. */
 void task30ms(void) {
   nCycles30ms++;
+  digitalWrite(PIN_LED_BLUE, (nCycles30ms & 0x02)>0);
   //cyclicLcdUpdate();
   //sanityCheck("cyclic30ms");
+  spiQCA7000checkForReceivedData();
+  if (timerSomethingReceivedFromSPI>0) {
+    
+    timerSomethingReceivedFromSPI--;
+  } else {
+    digitalWrite(PIN_LED_RED,LOW); /* turn the activity LED off */
+  }
+}
+
+void task10s(void) {
+  //Serial.print("rx bytes"); Serial.println(nTotalEthReceiveBytes);
+  //sendDemoMessageToEthernet();
+  //demoQCA7000();
 }
 
 /* This task runs once a second. */
 void task1s(void) {
   if (ledState==0) {
-    digitalWrite(PIN_LED,HIGH);
+    //digitalWrite(PIN_LED_BLUE,HIGH);
     //Serial.println("LED on");
     ledState = 1;
   } else {
-    digitalWrite(PIN_LED,LOW);
+    //digitalWrite(PIN_LED_BLUE,LOW);
     //Serial.println("LED off");
     ledState = 0;
   }
@@ -205,10 +222,11 @@ void task1s(void) {
     /* if we lost more than 1000 bytes on heap, print a waring message: */
     Serial.println("WARNING: EatenHeapSpace=" + String(eatenHeapSpace));
   }
-  Serial.print("rx bytes");
-  Serial.println(nTotalEthReceiveBytes);
-  sendDemoMessageToEthernet();
-  demoQCA7000();
+  nDivider1sTo10s++;
+  if (nDivider1sTo10s>=10) {
+    nDivider1sTo10s = 0;
+    task10s();
+  }
 }
 
 /**********************************************************/
@@ -221,7 +239,8 @@ void setup() {
   delay(800); /* wait until the display is up */  
   hardwareInterface_showOnDisplay("2025-10-09", "Hello", "World");
   // Set pin mode
-  pinMode(PIN_LED,OUTPUT);
+  pinMode(PIN_LED_BLUE,OUTPUT);
+  pinMode(PIN_LED_RED,OUTPUT);
   delay(500); /* wait for power inrush */
   log_v("Initializing the QCA7000...");
   qca7000setup();

@@ -19,7 +19,8 @@ https://community.home-assistant.io/t/wt32-eth01-and-pt100-max31865-spi-pins/807
 
 SPIClass * qcaspi = NULL;
 //static const int spiClk = 2000000; // 2 MHz
-static const int spiClk = 500000; // 500kHz
+//static const int spiClk = 500000; // 500kHz, this works perfect
+static const int spiClk = 1000000; // 1MHz
 
 
 uint8_t mySpiRxBuffer[4000];
@@ -133,7 +134,7 @@ uint16_t spiQCA7000DemoReadRDBUF_BYTE_AVA(void) {
   digitalWrite(qcaspi->pinSS(), HIGH);
   qcaspi->endTransaction();
 
-  Serial.println("RDBUF_BYTE_AVA: " + String(n));  
+  //Serial.println("RDBUF_BYTE_AVA: " + String(n));  
   return n;
 }
 
@@ -170,7 +171,8 @@ void QCA7000checkRxDataAndDistribute(int16_t availbytes) {
           memcpy(mySpiEthreceivebuffer, &p[12], mySpiEthreceivebufferLen);
           /* We received an ethernet package. Determine its type, and dispatch it to the related handler. */
           #ifdef VERBOSE_QCA7000
-            showAsHex(mySpiEthreceivebuffer, mySpiEthreceivebufferLen, "eth.mySpiEthreceivebuffer");
+            /* serial transmission for logging will take some milliseconds. Only use for debugging. */
+            //showAsHex(mySpiEthreceivebuffer, mySpiEthreceivebufferLen, "eth.mySpiEthreceivebuffer");
           #endif
           routeReceivedDataFromQcaToEthernet();
           availbytes = availbytes - L1 - 4;
@@ -224,7 +226,9 @@ void spiQCA7000checkForReceivedData(void) {
       mySpiRxBuffer[i] = qcaspi->transfer(0x00); /* loop over all the receive data */
     }
     digitalWrite(qcaspi->pinSS(), HIGH);
-    qcaspi->endTransaction();     
+    qcaspi->endTransaction();
+    timerSomethingReceivedFromSPI=5; /* for controlling the activity LED. 5 is 5*30ms = 150ms LED blink */
+    digitalWrite(PIN_LED_RED,HIGH); /* turn the activity LED on */
     QCA7000checkRxDataAndDistribute(availBytes); /* Takes the data from the SPI rx buffer, splits it into ethernet frames and distributes them. */
   }
 }
@@ -278,7 +282,7 @@ void spiQCA7000SendEthFrame(void) {
 }
 
 void demoQCA7000SendSoftwareVersionRequest(void) {
-  Serial.println("preparing GetSwReq");
+  //Serial.println("preparing GetSwReq");
   composeGetSwReq();
   Serial.println("sending GetSwReq");
   spiQCA7000SendEthFrame(); 
@@ -287,8 +291,7 @@ void demoQCA7000SendSoftwareVersionRequest(void) {
 void demoQCA7000(void) {
   spiQCA7000DemoReadSignature();
   spiQCA7000DemoReadWRBUF_SPC_AVA();
-  demoQCA7000SendSoftwareVersionRequest();
-  spiQCA7000DemoReadWRBUF_SPC_AVA();
-  spiQCA7000checkForReceivedData();
-  spiQCA7000checkForReceivedData();
+  //demoQCA7000SendSoftwareVersionRequest();
+  //spiQCA7000checkForReceivedData();
+  //spiQCA7000checkForReceivedData();
 }

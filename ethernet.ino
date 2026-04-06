@@ -84,7 +84,12 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
 void myEthTransmit(void) {
   uint16_t retval;
   nTotalTransmittedBytes += mytransmitbufferLen;
-  showAsHex(mytransmitbuffer, mytransmitbufferLen, "myEthTransmit");
+  /* serial transmission takes a while (some milliseconds), so only use for debugging without much traffic. */
+  //showAsHex(mytransmitbuffer, mytransmitbufferLen, "myEthTransmit");
+  if (!isEthLinkUp) {
+    addToTrace("eth link is dn");
+    return;
+  }
   retval = esp_eth_transmit(eth_handle, mytransmitbuffer, mytransmitbufferLen);
   if (retval!=ESP_OK) {
     addToTrace("esp_eth_transmit went wrong, " + String(retval));
