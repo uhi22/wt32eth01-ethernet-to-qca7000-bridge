@@ -20,7 +20,7 @@ uint8_t nFailedEthTransmissions;
 uint32_t nTotalEthReceiveBytes; /* total number of bytes which has been received from the ethernet port */
 uint32_t nTotalTransmittedBytes;
 uint8_t mytransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];
-uint8_t mytransmitbufferLen=0; /* The number of used bytes in the ethernet transmit buffer */
+uint16_t mytransmitbufferLen=0; /* The number of used bytes in the ethernet transmit buffer */
 uint8_t myreceivebuffer[MY_ETH_RECEIVE_BUFFER_LEN];
 uint16_t myreceivebufferLen;
 uint8_t myMAC[6] = {0xDC, 0x0e, 0xa1, 0x11, 0x67, 0x09}; /* just a default MAC address. Will be overwritten by the PHY MAC. */
@@ -63,8 +63,8 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
                                          on the buffer provided by the ethernet driver. This was allocated especially for each
                                          single received message, and will be present until the application frees it. */ 
   myreceivebufferLen=L;
-  sanityCheck("Step2 of eth rx"); 
-  //showAsHex(myreceivebuffer, myreceivebufferLen, "eth.myreceivebuffer");   
+  sanityCheck("Step2 of eth rx");
+  //showAsHex(myreceivebuffer, myreceivebufferLen, "eth.myreceivebuffer");
   //if (etherType == 0x88E1) { /* it is a HomePlug message */
   //  Serial.println("Its a HomePlug message.");
     //evaluateReceivedHomeplugPacket();
@@ -74,6 +74,30 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
   //} else {
     //Serial.println("Other message.");
   //}
+  /* Hand off to the main loop (task30ms -> routeReceivedDataFromEthernetToQca()): this
+     callback runs in the esp_eth driver's own task, not the Arduino main loop, and all
+     SPI access to the QCA must stay confined to the single main-loop thread (it already
+     shares the bus with spiQCA7000checkForReceivedData()). The PC can produce frames
+     (background OS/network traffic) faster than the 30ms main loop drains them, so this
+     queues into whichever ring-buffer slot is free (double buffering: one frame can be
+     queued while a previous one is still being sent over SPI) rather than overwriting a
+     slot the main loop might still be reading - that would corrupt what gets sent to the
+     QCA. If BOTH slots are already full, the new frame is dropped: losing a frame is
+     fine, corrupting one is not. */
+  if (myreceivebufferLen>sizeof(ethToQcaQueueBuffer[0])) {
+    addToTrace("ERROR: eth rx frame too big for QCA handoff, dropping " + String(myreceivebufferLen));
+  } else {
+    portENTER_CRITICAL(&qcaTxMux);
+    if (ethToQcaPendingCount>=ETH_TO_QCA_QUEUE_DEPTH) {
+      nDroppedEthFramesForQca++; /* queue full - drop this one, don't corrupt a slot being read */
+    } else {
+      memcpy(ethToQcaQueueBuffer[ethToQcaWriteIdx], myreceivebuffer, myreceivebufferLen);
+      ethToQcaQueueBufferLen[ethToQcaWriteIdx] = myreceivebufferLen;
+      ethToQcaWriteIdx = (ethToQcaWriteIdx + 1) % ETH_TO_QCA_QUEUE_DEPTH;
+      ethToQcaPendingCount++;
+    }
+    portEXIT_CRITICAL(&qcaTxMux);
+  }
   sanityCheck("End of eth rx");
   nInMyEthernetReceiveCallback--;
   free(buffer); /* We need to free the buffer, because the driver will NOT do this (at least in Arduino 2.0.4 with esp-idf4.4.4) */
@@ -260,6 +284,19 @@ bool initEth(void) {
     return false;
   }
   //log_v("esp_eth_start done");
+
+  /* The QCA's HomePlugAV-side MAC address is not the ESP32's own Ethernet MAC, so by
+     default the Ethernet MAC hardware filters out (never delivers to
+     myEthernetReceiveCallback()) any unicast frame addressed to the QCA rather than to
+     this interface itself - only broadcast passes the default filter. Promiscuous mode
+     is required so unicast-addressed HomePlugAV frames (e.g. from amptool/plctool) reach
+     the QCA at all. */
+  {
+    bool promiscuous = true;
+    if (esp_eth_ioctl(eth_handle, ETH_CMD_S_PROMISCUOUS, &promiscuous) != ESP_OK) {
+      log_e("Failed to enable promiscuous mode");
+    }
+  }
 
   //log_v("requesting MAC."); 
   rc = esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, myMAC);

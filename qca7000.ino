@@ -24,7 +24,7 @@ static const int spiClk = 1000000; // 1MHz
 
 
 uint8_t mySpiRxBuffer[4000];
-uint8_t mySpiTxBuffer[300];
+uint8_t mySpiTxBuffer[MY_ETH_TRANSMIT_BUFFER_LEN + 12]; /* 10 byte header + payload + 2 byte footer, see spiQCA7000SendEthFrame() */
 uint32_t nSpiTotalTransmittedBytes;
 
 uint8_t mySpiEthtransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];

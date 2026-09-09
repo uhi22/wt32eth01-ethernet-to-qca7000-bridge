@@ -25,10 +25,33 @@
 //#define PIN_POWER_RELAIS 14 /* IO14 for the power relay */
 uint32_t currentTime;
 uint32_t lastTime1s;
+uint32_t lastTime5s;
 uint32_t lastTime30ms;
 uint32_t nCycles30ms;
 uint8_t ledState;
 uint8_t timerSomethingReceivedFromSPI;
+
+/* Hand-off of Ethernet frames (from myEthernetReceiveCallback(), which runs in the
+   esp_eth driver's own task) to the main loop (task30ms, which owns all SPI access to
+   the QCA): a small fixed-depth ring buffer (depth 2 = one frame can be queued while a
+   previous one is still being sent over SPI, so two back-to-back frames survive without
+   loss). All of ethToQcaQueueBuffer, ethToQcaWriteIdx, ethToQcaReadIdx and
+   ethToQcaPendingCount are touched from both sides, always under qcaTxMux - a spinlock held only for a
+   memcpy/index update, never across the actual (multi-millisecond) SPI transfer. If the
+   queue is full, a new frame is DROPPED rather than overwriting a slot still being read:
+   losing a frame is fine, corrupting one being copied out is not.
+   (ETH_TO_QCA_QUEUE_DEPTH and the extern declarations are in globalconfig.h, since that
+   header is included before this point and needs the depth for its array declarations.) */
+portMUX_TYPE qcaTxMux = portMUX_INITIALIZER_UNLOCKED;
+uint8_t ethToQcaQueueBuffer[ETH_TO_QCA_QUEUE_DEPTH][MY_ETH_TRANSMIT_BUFFER_LEN];
+uint16_t ethToQcaQueueBufferLen[ETH_TO_QCA_QUEUE_DEPTH];
+uint8_t ethToQcaWriteIdx;
+uint8_t ethToQcaReadIdx;
+uint8_t ethToQcaPendingCount; /* 0..ETH_TO_QCA_QUEUE_DEPTH frames currently queued */
+uint32_t nDroppedEthFramesForQca; /* queue was full when a new frame arrived */
+uint32_t nFramesEthToQca; /* frames actually sent to the QCA via SPI */
+uint32_t nFramesQcaToEth; /* frames actually sent to the Ethernet port */
+
 uint32_t initialHeapSpace;
 uint32_t eatenHeapSpace;
 uint8_t nDivider1sTo10s;
@@ -63,6 +86,34 @@ void routeReceivedDataFromQcaToEthernet(void) {
   memcpy(mytransmitbuffer, mySpiEthreceivebuffer, mySpiEthreceivebufferLen);
   mytransmitbufferLen = mySpiEthreceivebufferLen;
   myEthTransmit();
+  nFramesQcaToEth++;
+}
+
+void routeReceivedDataFromEthernetToQca(void) {
+  /* Drain every frame currently queued (via the ethToQcaQueue hand-off from
+     myEthernetReceiveCallback()), one SPI transfer each, so a burst of back-to-back
+     Ethernet frames queued during one 30ms tick all still go out, not just the first. */
+  /* source: ethToQcaQueueBuffer[ethToQcaReadIdx], ethToQcaQueueBufferLen[ethToQcaReadIdx]
+     (copied out under the lock) */
+  /* destination: mySpiEthtransmitbuffer, mySpiEthtransmitbufferLen */
+  /* From here on mySpiEthtransmitbuffer is exclusively owned by the main loop - the
+     callback never touches it, so the (multi-millisecond) SPI transfer below can safely
+     run outside the critical section, and the callback can go on queuing further frames
+     into the OTHER slot(s) while a transfer is in flight. */
+  while (1) {
+    portENTER_CRITICAL(&qcaTxMux);
+    if (ethToQcaPendingCount==0) {
+      portEXIT_CRITICAL(&qcaTxMux);
+      break;
+    }
+    memcpy(mySpiEthtransmitbuffer, ethToQcaQueueBuffer[ethToQcaReadIdx], ethToQcaQueueBufferLen[ethToQcaReadIdx]);
+    mySpiEthtransmitbufferLen = ethToQcaQueueBufferLen[ethToQcaReadIdx];
+    ethToQcaReadIdx = (ethToQcaReadIdx + 1) % ETH_TO_QCA_QUEUE_DEPTH;
+    ethToQcaPendingCount--;
+    portEXIT_CRITICAL(&qcaTxMux);
+    spiQCA7000SendEthFrame();
+    nFramesEthToQca++;
+  }
 }
 
 /**********************************************************/
@@ -186,12 +237,17 @@ void task30ms(void) {
   //cyclicLcdUpdate();
   //sanityCheck("cyclic30ms");
   spiQCA7000checkForReceivedData();
+  routeReceivedDataFromEthernetToQca(); /* drains whatever is queued; cheap no-op if nothing is */
   if (timerSomethingReceivedFromSPI>0) {
     
     timerSomethingReceivedFromSPI--;
   } else {
     digitalWrite(PIN_LED_RED,LOW); /* turn the activity LED off */
   }
+}
+
+void task5s(void) {
+  Serial.println("Frame counters: EthToQca=" + String(nFramesEthToQca) + " QcaToEth=" + String(nFramesQcaToEth) + " droppedEthToQca=" + String(nDroppedEthFramesForQca));
 }
 
 void task10s(void) {
@@ -256,6 +312,7 @@ void setup() {
   currentTime = millis();
   lastTime30ms = currentTime;
   lastTime1s = currentTime;
+  lastTime5s = currentTime;
   log_v("Setup finished.");
   initialHeapSpace=ESP.getFreeHeap();
 }
@@ -270,5 +327,9 @@ void loop() {
   if ((currentTime - lastTime1s)>1000) {
     lastTime1s += 1000;
     task1s();
+  }
+  if ((currentTime - lastTime5s)>5000) {
+    lastTime5s += 5000;
+    task5s();
   }
 }

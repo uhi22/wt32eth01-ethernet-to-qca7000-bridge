@@ -6,17 +6,37 @@
 #define VERBOSE_QCA7000
 
 /* Ethernet */
-#define MY_ETH_TRANSMIT_BUFFER_LEN 250
-#define MY_ETH_RECEIVE_BUFFER_LEN 250
+#define MY_ETH_TRANSMIT_BUFFER_LEN 1000
+#define MY_ETH_RECEIVE_BUFFER_LEN 1000
 extern uint32_t nTotalEthReceiveBytes; /* total number of bytes which has been received from the ethernet port */
 extern uint32_t nTotalTransmittedBytes;
 extern uint8_t mytransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];
-extern uint8_t mytransmitbufferLen; /* The number of used bytes in the ethernet transmit buffer */
+extern uint16_t mytransmitbufferLen; /* The number of used bytes in the ethernet transmit buffer */
 extern uint8_t myreceivebuffer[MY_ETH_RECEIVE_BUFFER_LEN];
 extern uint16_t myreceivebufferLen;
 extern uint8_t myMAC[6];
 extern uint8_t nMaxInMyEthernetReceiveCallback, nInMyEthernetReceiveCallback;
 extern uint8_t isEthLinkUp;
+
+/* Ethernet-to-QCA hand-off (myEthernetReceiveCallback(), which runs in the esp_eth
+   driver's own task -> task30ms()/routeReceivedDataFromEthernetToQca(), the main loop,
+   which owns all SPI access to the QCA): a small fixed-depth ring buffer (depth 2 =
+   double buffering, so one frame can be queued while a previous one is still being sent
+   over SPI - two back-to-back frames survive without loss). Always accessed under
+   qcaTxMux, a short spinlock held only for a memcpy/index update, never across the
+   actual SPI transfer. If the queue is full, a new frame is dropped rather than
+   overwriting a slot still being read - losing a frame is fine, corrupting one being
+   copied out is not. */
+#define ETH_TO_QCA_QUEUE_DEPTH 2
+extern portMUX_TYPE qcaTxMux;
+extern uint8_t ethToQcaQueueBuffer[ETH_TO_QCA_QUEUE_DEPTH][MY_ETH_TRANSMIT_BUFFER_LEN];
+extern uint16_t ethToQcaQueueBufferLen[ETH_TO_QCA_QUEUE_DEPTH];
+extern uint8_t ethToQcaWriteIdx;
+extern uint8_t ethToQcaReadIdx;
+extern uint8_t ethToQcaPendingCount;
+extern uint32_t nDroppedEthFramesForQca;
+extern uint32_t nFramesEthToQca; /* frames actually sent to the QCA via SPI */
+extern uint32_t nFramesQcaToEth; /* frames actually sent to the Ethernet port */
 
 /* QCA buffers */
 extern uint8_t mySpiEthtransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];
