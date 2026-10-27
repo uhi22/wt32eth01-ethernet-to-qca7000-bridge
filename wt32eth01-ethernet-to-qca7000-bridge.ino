@@ -29,7 +29,11 @@ uint32_t lastTime5s;
 uint32_t lastTime30ms;
 uint32_t nCycles30ms;
 uint8_t ledState;
-uint8_t timerSomethingReceivedFromSPI;
+/* Activity LED: on for LED_ACTIVITY_MS after each SPI read that delivered data (was 150 ms, which
+   merged bursts into a steady glow). Each new read restarts the on-time. */
+#define LED_ACTIVITY_MS 20
+uint8_t ledActivityOn;
+uint32_t ledActivityOnSinceMs;
 
 /* Hand-off of Ethernet frames (from myEthernetReceiveCallback(), which runs in the
    esp_eth driver's own task) to the main loop (task30ms, which owns all SPI access to
@@ -47,7 +51,9 @@ uint8_t ethToQcaQueueBuffer[ETH_TO_QCA_QUEUE_DEPTH][MY_ETH_TRANSMIT_BUFFER_LEN];
 uint16_t ethToQcaQueueBufferLen[ETH_TO_QCA_QUEUE_DEPTH];
 uint8_t ethToQcaWriteIdx;
 uint8_t ethToQcaReadIdx;
-uint8_t ethToQcaPendingCount; /* 0..ETH_TO_QCA_QUEUE_DEPTH frames currently queued */
+volatile uint8_t ethToQcaPendingCount; /* 0..ETH_TO_QCA_QUEUE_DEPTH frames currently queued */
+uint32_t nMaxSpiServiceUs; /* longest single QCA receive-and-forward since the last task5s() print */
+uint32_t lastSpiPollUs;
 uint32_t nDroppedEthFramesForQca; /* queue was full when a new frame arrived */
 uint32_t nFramesEthToQca; /* frames actually sent to the QCA via SPI */
 uint32_t nFramesQcaToEth; /* frames actually sent to the Ethernet port */
@@ -100,7 +106,7 @@ void routeReceivedDataFromEthernetToQca(void) {
      callback never touches it, so the (multi-millisecond) SPI transfer below can safely
      run outside the critical section, and the callback can go on queuing further frames
      into the OTHER slot(s) while a transfer is in flight. */
-  while (1) {
+  while (ethToQcaPendingCount!=0) { /* unlocked pre-check: this runs on every loop pass */
     portENTER_CRITICAL(&qcaTxMux);
     if (ethToQcaPendingCount==0) {
       portEXIT_CRITICAL(&qcaTxMux);
@@ -230,24 +236,41 @@ void sendDemoMessageToEthernet(void) {
 /**********************************************************/
 /* The tasks */
 
+/* The data path between Ethernet and the QCA. Runs on every pass of loop(), NOT on the 30ms
+   tick: a request waited up to 30ms for the tick before going to the QCA, and the answer up to
+   30ms for the next one (about 50ms round trip). Frames from the Ethernet are drained
+   immediately (an unlocked test of a volatile counter, a few cycles when idle). The QCA is polled
+   every SPI_POLL_INTERVAL_US; one poll is a 4-byte SPI transaction, about 30us at 4MHz. */
+#define SPI_POLL_INTERVAL_US 500
+void spiService(void) {
+  uint32_t now, dt;
+  routeReceivedDataFromEthernetToQca(); /* drains whatever is queued; cheap no-op if nothing is */
+  now = micros();
+  if ((now - lastSpiPollUs) >= SPI_POLL_INTERVAL_US) {
+    lastSpiPollUs = now;
+    spiQCA7000checkForReceivedData();
+    dt = micros() - now;
+    if (dt>nMaxSpiServiceUs) nMaxSpiServiceUs = dt;
+  }
+  /* Activity LED (QCA -> host traffic): switched on by the SPI read, off again after LED_ACTIVITY_MS.
+     Timed here, every pass, not in the 30ms tick, so a short on-time is not rounded up to 30 ms. */
+  if (ledActivityOn && ((millis() - ledActivityOnSinceMs) >= LED_ACTIVITY_MS)) {
+    ledActivityOn = 0;
+    digitalWrite(PIN_LED_RED,LOW);
+  }
+}
+
 /* This task runs each 30ms. */
 void task30ms(void) {
   nCycles30ms++;
   digitalWrite(PIN_LED_BLUE, (nCycles30ms & 0x02)>0);
   //cyclicLcdUpdate();
   //sanityCheck("cyclic30ms");
-  spiQCA7000checkForReceivedData();
-  routeReceivedDataFromEthernetToQca(); /* drains whatever is queued; cheap no-op if nothing is */
-  if (timerSomethingReceivedFromSPI>0) {
-    
-    timerSomethingReceivedFromSPI--;
-  } else {
-    digitalWrite(PIN_LED_RED,LOW); /* turn the activity LED off */
-  }
 }
 
 void task5s(void) {
-  Serial.println("Frame counters: EthToQca=" + String(nFramesEthToQca) + " QcaToEth=" + String(nFramesQcaToEth) + " droppedEthToQca=" + String(nDroppedEthFramesForQca));
+  Serial.println("Frame counters: EthToQca=" + String(nFramesEthToQca) + " QcaToEth=" + String(nFramesQcaToEth) + " droppedEthToQca=" + String(nDroppedEthFramesForQca) + " maxSpiServiceUs=" + String(nMaxSpiServiceUs));
+  nMaxSpiServiceUs = 0;
 }
 
 void task10s(void) {
@@ -319,6 +342,7 @@ void setup() {
 
 void loop() {
   /* a simple scheduler which calls the cyclic tasks depending on system time */
+  spiService(); /* the latency-critical data path, every pass */
   currentTime = millis();
   if ((currentTime - lastTime30ms)>30) {
     lastTime30ms += 30;

@@ -3,11 +3,13 @@
 
 /* Logging verbosity settings */
 #define VERBOSE_INIT_ETH
-#define VERBOSE_QCA7000
+/* VERBOSE_QCA7000 prints to the serial port for every SPI read (at 115200 baud: ~5 ms per line,
+   blocking the loop). Only enable for debugging without much traffic. */
+//#define VERBOSE_QCA7000
 
-/* Ethernet */
-#define MY_ETH_TRANSMIT_BUFFER_LEN 1000
-#define MY_ETH_RECEIVE_BUFFER_LEN 1000
+/* Ethernet. 1536 covers a full 1514-byte frame (plus VLAN tag headroom). */
+#define MY_ETH_TRANSMIT_BUFFER_LEN 1536
+#define MY_ETH_RECEIVE_BUFFER_LEN 1536
 extern uint32_t nTotalEthReceiveBytes; /* total number of bytes which has been received from the ethernet port */
 extern uint32_t nTotalTransmittedBytes;
 extern uint8_t mytransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];
@@ -27,16 +29,17 @@ extern uint8_t isEthLinkUp;
    actual SPI transfer. If the queue is full, a new frame is dropped rather than
    overwriting a slot still being read - losing a frame is fine, corrupting one being
    copied out is not. */
-#define ETH_TO_QCA_QUEUE_DEPTH 2
+#define ETH_TO_QCA_QUEUE_DEPTH 8 /* a burst of back-to-back frames queues while one is in flight over SPI */
 extern portMUX_TYPE qcaTxMux;
 extern uint8_t ethToQcaQueueBuffer[ETH_TO_QCA_QUEUE_DEPTH][MY_ETH_TRANSMIT_BUFFER_LEN];
 extern uint16_t ethToQcaQueueBufferLen[ETH_TO_QCA_QUEUE_DEPTH];
 extern uint8_t ethToQcaWriteIdx;
 extern uint8_t ethToQcaReadIdx;
-extern uint8_t ethToQcaPendingCount;
+extern volatile uint8_t ethToQcaPendingCount; /* volatile: the main loop tests it without the lock on every pass */
 extern uint32_t nDroppedEthFramesForQca;
 extern uint32_t nFramesEthToQca; /* frames actually sent to the QCA via SPI */
 extern uint32_t nFramesQcaToEth; /* frames actually sent to the Ethernet port */
+extern uint32_t nMaxSpiServiceUs; /* longest single QCA receive-and-forward since the last task5s() print */
 
 /* QCA buffers */
 extern uint8_t mySpiEthtransmitbuffer[MY_ETH_TRANSMIT_BUFFER_LEN];

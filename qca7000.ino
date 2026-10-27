@@ -20,7 +20,9 @@ https://community.home-assistant.io/t/wt32-eth01-and-pt100-max31865-spi-pins/807
 SPIClass * qcaspi = NULL;
 //static const int spiClk = 2000000; // 2 MHz
 //static const int spiClk = 500000; // 500kHz, this works perfect
-static const int spiClk = 1000000; // 1MHz
+//static const int spiClk = 1000000; // 1MHz, the old value: a 300 byte frame took ~3ms, byte by byte
+static const int spiClk = 2000000; // 2MHz: series resistors in the SPI lines make the edges marginal at 4MHz. The QCA7000 itself allows up to 12MHz.
+static const uint8_t spiZeros[4000] = {0}; /* the dummy bytes clocked out while reading */
 
 
 uint8_t mySpiRxBuffer[4000];
@@ -110,12 +112,14 @@ void spiQCA7000DemoReadWRBUF_SPC_AVA(void) {
 
 void spiQCA7000DemoWriteBFR_SIZE(uint16_t n) {
   /* Demo for writing the write buffer size to the QCA7000 */
+  uint8_t cmd[4];
+  cmd[0] = 0x41; /* 0x41 is write, internal, reg 1 */
+  cmd[1] = 0x00;
+  cmd[2] = n>>8;
+  cmd[3] = n;
   qcaspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE3));
   digitalWrite(qcaspi->pinSS(), LOW);
-  (void) qcaspi->transfer(0x41); /* 0x41 is write, internal, reg 1 */
-  (void) qcaspi->transfer(0x00);
-  (void) qcaspi->transfer(n>>8);
-  (void) qcaspi->transfer(n);
+  qcaspi->writeBytes(cmd, 4);
   digitalWrite(qcaspi->pinSS(), HIGH);
   qcaspi->endTransaction(); 
 }
@@ -124,14 +128,18 @@ void spiQCA7000DemoWriteBFR_SIZE(uint16_t n) {
 uint16_t spiQCA7000DemoReadRDBUF_BYTE_AVA(void) {
   /* Demo for retrieving the amount of available received data from QCA7000 */
   uint16_t n;
+  uint8_t cmd[4], rsp[4];
+  cmd[0] = 0xC3; /* 0xC3 is read, internal, reg 3 RDBUF_BYTE_AVA */
+  cmd[1] = 0x00;
+  cmd[2] = 0x00;
+  cmd[3] = 0x00;
   qcaspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE3));
   digitalWrite(qcaspi->pinSS(), LOW);
-  (void)qcaspi->transfer(0xC3); /* 0xC3 is read, internal, reg 3 RDBUF_BYTE_AVA */
-  (void)qcaspi->transfer(0x00);
-  n = qcaspi->transfer(0x00); /* upper byte of the size */
-  n<<=8;  
-  n+=qcaspi->transfer(0x00); /* lower byte of the size */
+  qcaspi->transferBytes(cmd, rsp, 4);
   digitalWrite(qcaspi->pinSS(), HIGH);
+  n = rsp[2]; /* upper byte of the size */
+  n<<=8;
+  n+=rsp[3]; /* lower byte of the size */
   qcaspi->endTransaction();
 
   //Serial.println("RDBUF_BYTE_AVA: " + String(n));  
@@ -159,8 +167,8 @@ void QCA7000checkRxDataAndDistribute(int16_t availbytes) {
       L1 = p[2]; L1<<=8; L1+=p[3];
       /* The "inner" len, little endian. */
       L2 = p[9]; L2<<=8; L2+=p[8];
-      if ((p[4]=0xAA) && (p[5]=0xAA) && (p[6]=0xAA) && (p[7]=0xAA) 
-            && (L2+10==L1)) {
+      if ((availbytes>=12) && (p[4]==0xAA) && (p[5]==0xAA) && (p[6]==0xAA) && (p[7]==0xAA)
+            && (L2+10==L1) && ((int32_t)L1+4<=availbytes)) { /* last test: the frame lies completely inside the data we read */
           counterOfEthFramesInSpiFrame++;
           /* The start of frame and the two length informations are plausible. Copy the payload to the eth receive buffer. */
           mySpiEthreceivebufferLen = L2;
@@ -217,17 +225,19 @@ void spiQCA7000checkForReceivedData(void) {
     is necessary to get the data (according to https://chargebyte.com/assets/Downloads/an4_rev5.pdf)
        - write the BFR SIZE, this sets the length of data to be read via external read
        - start an external read and receive as much data as set in SPI REG BFR SIZE before */
+    if (availBytes>sizeof(mySpiRxBuffer)) {
+      availBytes = sizeof(mySpiRxBuffer); /* never read more than the buffer holds */
+    }
     spiQCA7000DemoWriteBFR_SIZE(availBytes);
     qcaspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE3));
     digitalWrite(qcaspi->pinSS(), LOW);
     (void)qcaspi->transfer(0x80); /* 0x80 is read, external */
     (void)qcaspi->transfer(0x00);
-    for (i=0; i<availBytes; i++) {
-      mySpiRxBuffer[i] = qcaspi->transfer(0x00); /* loop over all the receive data */
-    }
+    qcaspi->transferBytes(spiZeros, mySpiRxBuffer, availBytes); /* all the receive data in one burst */
     digitalWrite(qcaspi->pinSS(), HIGH);
     qcaspi->endTransaction();
-    timerSomethingReceivedFromSPI=5; /* for controlling the activity LED. 5 is 5*30ms = 150ms LED blink */
+    ledActivityOnSinceMs = millis(); /* activity LED: spiService() switches it off after LED_ACTIVITY_MS */
+    ledActivityOn = 1;
     digitalWrite(PIN_LED_RED,HIGH); /* turn the activity LED on */
     QCA7000checkRxDataAndDistribute(availBytes); /* Takes the data from the SPI rx buffer, splits it into ethernet frames and distributes them. */
   }
@@ -253,8 +263,8 @@ void spiQCA7000SendEthFrame(void) {
     1. Check whether the available transmit buffer size is big enough to get the intended frame.
        If not, this is an error situation, and we need to instruct the QCA to heal, e.g. by resetting it.
   */
-  String s;
-  Serial.println("mySpiEthtransmitbufferLen " + String(mySpiEthtransmitbufferLen));
+  /* No Serial output in here: a hex dump of the frame at 115200 baud blocked the loop for ~18ms per
+     60 bytes. */
   spiQCA7000DemoWriteBFR_SIZE(mySpiEthtransmitbufferLen+10); /* The size in the BFR_SIZE is 10 bytes more than in the size after the preamble below (in the original CCM trace) */
   mySpiTxBuffer[0] = 0x00; /* external write command */
   mySpiTxBuffer[1] = 0x00;
@@ -269,16 +279,11 @@ void spiQCA7000SendEthFrame(void) {
   memcpy(&mySpiTxBuffer[10], mySpiEthtransmitbuffer, mySpiEthtransmitbufferLen); /* the ethernet frame */
   mySpiTxBuffer[10+mySpiEthtransmitbufferLen] = 0x55; /* End of frame, 2 bytes with 0x55. Aka QcaFrmCreateFooter in the linux driver */
   mySpiTxBuffer[11+mySpiEthtransmitbufferLen] = 0x55;
-  int i;
   qcaspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE3));
   digitalWrite(qcaspi->pinSS(), LOW);
-  for (i=0; i<12+mySpiEthtransmitbufferLen; i++) {
-    (void) qcaspi->transfer(mySpiTxBuffer[i]);
-    s = s + String(mySpiTxBuffer[i], HEX) + " ";
-  }
+  qcaspi->writeBytes(mySpiTxBuffer, 12+mySpiEthtransmitbufferLen); /* the whole frame in one burst */
   digitalWrite(qcaspi->pinSS(), HIGH);
   qcaspi->endTransaction();
-  Serial.println(s);
 }
 
 void demoQCA7000SendSoftwareVersionRequest(void) {

@@ -74,7 +74,7 @@ esp_err_t myEthernetReceiveCallback(esp_eth_handle_t hdl, uint8_t *buffer, uint3
   //} else {
     //Serial.println("Other message.");
   //}
-  /* Hand off to the main loop (task30ms -> routeReceivedDataFromEthernetToQca()): this
+  /* Hand off to the main loop (spiService() -> routeReceivedDataFromEthernetToQca(), every loop pass): this
      callback runs in the esp_eth driver's own task, not the Arduino main loop, and all
      SPI access to the QCA must stay confined to the single main-loop thread (it already
      shares the bus with spiQCA7000checkForReceivedData()). The PC can produce frames
